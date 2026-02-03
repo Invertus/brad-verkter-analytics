@@ -1,0 +1,45 @@
+{
+  "name": "@bradsearch/brad-verkter-analytics",
+  "version": "1.0.0",
+  "description": "BradSearch analytics tracking provider for Verkter client storefronts",
+  "main": "dist/index.js",
+  "module": "dist/index.js",
+  "files": [
+    "dist"
+  ],
+  "scripts": {
+    "build": "babel src --out-dir dist --copy-files",
+    "prepublishOnly": "npm run build"
+  },
+  "peerDependencies": {
+    "react": ">=16.8.0"
+  },
+  "dependencies": {
+    "@bradsearch/analytics-core": "*"
+  },
+  "devDependencies": {
+    "@babel/cli": "^7.23.0",
+    "@babel/core": "^7.23.0",
+    "@babel/preset-env": "^7.23.0",
+    "@babel/preset-react": "^7.23.0"
+  },
+  "keywords": [
+    "bradsearch",
+    "magento",
+    "pwa"
+  ],
+  "license": "Apache-2.0",
+  "private": false,
+  "author": {
+    "name": "BradSearch",
+    "email": "hello@bradsearch.com"
+  },
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/Invertus/brad-verkter-analytics"
+  },
+  "bugs": {
+    "url": "https://github.com/Invertus/brad-verkter-analytics/issues"
+  },
+  "homepage": "https://github.com/Invertus/brad-verkter-analytics#readme"
+}
