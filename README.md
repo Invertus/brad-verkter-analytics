@@ -36,31 +36,178 @@ function App() {
 ## Magento PWA Studio Integration
 
 ```jsx
-import { BradSearchAnalyticsProvider } from '@bradsearch/brad-verkter-analytics';
-import { useAppContext } from '@magento/peregrine/lib/context/app';
+// 1. Create new package at path packages/peregrine/lib/context/bradSearchAnalytics/index.js
+
+/**
+ * BradSearch Analytics Provider
+ *
+ * Re-exports from @bradsearch/brad-verkter-analytics and wraps with Verkter-specific
+ * context integration (storeConfig and cartContext).
+ */
+
+import React from 'react';
+import { BradSearchAnalyticsProvider as BaseBradSearchAnalyticsProvider, useBradSearchTracker } from '@bradsearch/brad-verkter-analytics';
+import { useAppContext } from '../app';
+import { useCartContext } from '../cart';
+
+/**
+ * BradSearch Analytics Provider Component
+ *
+ * Wraps the base provider with Verkter-specific context integration.
+ * Reads configuration from storeConfig and cart ID from cart context.
+ */
+export const BradSearchAnalyticsProvider = ({ children }) => {
+    const [{ storeConfig }] = useAppContext();
+    const [cartState] = useCartContext();
+
+    const isEnabled = storeConfig?.bradsearch_analytics_enabled === '1' ||
+        storeConfig?.bradsearch_analytics_enabled === true;
+
+    if (!isEnabled || !storeConfig?.bradsearch_analytics_website_id) {
+        return <>{children}</>;
+    }
+
+    return (
+        <BaseBradSearchAnalyticsProvider
+            websiteId={storeConfig.bradsearch_analytics_website_id}
+            enabled={isEnabled}
+            cartId={cartState?.cartId}
+        >
+            {children}
+        </BaseBradSearchAnalyticsProvider>
+    );
+};
+
+// Re-export the tracker hook for advanced usage
+export { useBradSearchTracker };
+
+// 2. packages/venia-ui/lib/components/Adapter/adapter.js - wrap code with data provider
+
+import { BradSearchAnalyticsProvider } from '@magento/peregrine/lib/context/bradSearchAnalytics';
+
+<BradSearchAnalyticsProvider>
+    <ErrorToasts>{children}</ErrorToasts>
+</BradSearchAnalyticsProvider>
+
+// 3. packages/peregrine/lib/talons/Header/storeSwitcher.gql.js
+
+bradsearch_analytics_enabled
+bradsearch_analytics_website_id
+
+// 4. packages/peregrine/lib/store/reducers/app.js
+
+bradsearch_analytics_enabled: false
+bradsearch_analytics_website_id: ''
+
+// 5. Now need to extend code to enable custom data tracking. 
+
+// 5.1 packages/peregrine/lib/hooks/useDataLayer.js 
+
+import { useBradSearchTracker } from '@magento/peregrine/lib/context/bradSearchAnalytics';
 import { useCartContext } from '@magento/peregrine/lib/context/cart';
 
-function AnalyticsWrapper({ children }) {
-  const [{ storeConfig }] = useAppContext();
-  const [cartState] = useCartContext();
+const [
+    {
+        cartId
+    },
+] = useCartContext();
 
-  const isEnabled = storeConfig?.bradsearch_analytics_enabled === '1' ||
-                    storeConfig?.bradsearch_analytics_enabled === true;
+// Get BradSearch tracker instance once at hook level
+const bradSearchTracker = useBradSearchTracker();
 
-  if (!isEnabled || !storeConfig?.bradsearch_analytics_website_id) {
-    return <>{children}</>;
-  }
+removeFromCartEvent: data => {
+    // Existing GTM tracking
+    pushTag('remove_from_cart', removeFromCart(data));
 
-  return (
-    <BradSearchAnalyticsProvider
-      websiteId={storeConfig.bradsearch_analytics_website_id}
-      enabled={isEnabled}
-      cartId={cartState?.cartId}
-    >
-      {children}
-    </BradSearchAnalyticsProvider>
-  );
+    // BradSearch tracking
+    if (bradSearchTracker && Array.isArray(data)) {
+        data.forEach(item => {
+            if (item?.product?.id) {
+                try {
+                    bradSearchTracker.trackRemoveFromCart({
+                        cartId: cartId,
+                        productId: parseInt(item.product.id)
+                    });
+                } catch (error) {
+                    console.error('[BradSearch Analytics] Error tracking remove-from-cart:', error);
+                }
+            }
+        });
+    }
 }
+
+addToCartEvent: data => {
+    // Existing GTM tracking
+    pushTag('add_to_cart', addToCartTag(data));
+
+    // BradSearch tracking
+    if (bradSearchTracker && data.id) {
+        try {
+            bradSearchTracker.trackAddToCart({
+                cartId: cartId,
+                productId: parseInt(data.id)
+            });
+        } catch (error) {
+            console.error('[BradSearch Analytics] Error tracking add-to-cart:', error);
+        }
+    }
+}
+ // add new field to existing object
+searchProductClickEvent: productId => {
+    if (bradSearchTracker && productId) {
+        try {
+            bradSearchTracker.trackSearchProductClick({
+                productId: parseInt(productId)
+            });
+        } catch (error) {
+            console.error('[BradSearch Analytics] Error tracking search product click:', error);
+        }
+    }
+}
+
+// 5.2 packages/venia-ui/lib/components/SearchPage/searchPage.js
+
+// Get search product click tracking handler
+const { searchProductClickEvent } = useDataLayer();
+
+<Gallery
+    items={data.products.items}
+    {/* onProductClick is currently missing. Pass it down so event reaches packages/venia-ui/lib/components/Gallery/item.js  */}
+    onProductClick={searchProductClickEvent}
+/>
+
+// 5.3 packages/venia-ui/lib/components/Gallery/item.js
+
+const handleProductClick = () => {
+    if (onProductClick) {
+        onProductClick(item.id);
+    }
+};
+
+<Link to={productLink} className={classes.images} onClick={handleProductClick}>
+
+<AddToCartbutton item={item} onProductClick={onProductClick} />
+
+// 5.4 packages/venia-ui/lib/components/Gallery/addToCartButton.js
+
+const { item, onProductClick } = props;
+
+const handlePress = async (...props) => {
+    if (onProductClick) {
+        onProductClick(item.id);
+    }
+    
+    await handleAddToCart(...props);
+};
+    
+<Button
+    className={classes.root}
+    disabled={isDisabled}
+    onPress={handleAddToCart}
+    onPress={handlePress}
+    priority="high"
+    type="button"/>
+
 ```
 
 ## Tracked Events
