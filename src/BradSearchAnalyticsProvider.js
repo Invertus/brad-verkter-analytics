@@ -12,6 +12,7 @@
  */
 
 import React, { useEffect, useRef, useState } from 'react';
+import { createTracker, UmamiProvider } from '@bradsearch/analytics-core';
 import { DEFAULT_SCRIPT_URL } from './config/constants';
 
 // Module-level tracker reference shared across the provider
@@ -19,13 +20,9 @@ let globalTracker = null;
 
 /**
  * Initialize the analytics tracker
- * Uses dynamic import to load @bradsearch/analytics-core only when needed
  */
 const initializeTracker = async (config) => {
     try {
-        // Dynamically import analytics-core only when enabled
-        const { createTracker, UmamiProvider } = await import('@bradsearch/analytics-core');
-
         const tracker = createTracker({
             provider: new UmamiProvider({
                 debug: config.debug,
