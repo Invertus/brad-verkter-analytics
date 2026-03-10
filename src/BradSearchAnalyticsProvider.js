@@ -59,7 +59,6 @@ const initializeTracker = async (config) => {
  * @param {string} [props.scriptUrl] - Optional. Umami script URL. Defaults to DEFAULT_SCRIPT_URL
  * @param {boolean} [props.enabled=true] - Optional. Enable/disable tracking
  * @param {boolean} [props.debug] - Optional. Enable debug logging. Defaults to NODE_ENV === 'development'
- * @param {string} [props.cartId] - Optional. Cart ID for cart enrichment
  * @param {React.ReactNode} props.children - App content
  */
 export const BradSearchAnalyticsProvider = ({
@@ -67,7 +66,6 @@ export const BradSearchAnalyticsProvider = ({
     scriptUrl = DEFAULT_SCRIPT_URL,
     enabled = true,
     debug = process.env.NODE_ENV === 'development',
-    cartId,
     children
 }) => {
     const trackerRef = useRef(null);
@@ -104,18 +102,48 @@ export const BradSearchAnalyticsProvider = ({
         };
     }, [enabled, websiteId, scriptUrl, debug]);
 
-    // Update cart enrichment when cart ID changes
+    // Track success page visit (for conversion attribution)
     useEffect(() => {
-        if (trackerRef.current && cartId) {
-            try {
-                trackerRef.current.updateCart({
-                    cartId: cartId
-                });
-            } catch (error) {
-                console.error('[BradSearch Analytics] Error updating cart:', error);
-            }
-        }
-    }, [cartId]);
+        if (typeof window === 'undefined') return;
+
+        const trackSuccessPage = () => {
+            const path = window.location.pathname;
+            if (!path.startsWith('/success/')) return;
+            if (!trackerRef.current) return;
+
+            // Extract cart_id from URL: /success/{maskedCartId}
+            const cartIdFromUrl = path.split('/success/')[1]?.split(/[?#]/)[0];
+            if (!cartIdFromUrl) return;
+
+            trackerRef.current.trackPageVisit({
+                pageName: 'order-confirmation',
+                cartId: cartIdFromUrl
+            });
+        };
+
+        // Track on initial load (direct navigation to success page)
+        trackSuccessPage();
+
+        // Track on SPA route changes
+        const origPushState = history.pushState;
+        const origReplaceState = history.replaceState;
+
+        history.pushState = function(...args) {
+            origPushState.apply(this, args);
+            setTimeout(trackSuccessPage, 0);
+        };
+        history.replaceState = function(...args) {
+            origReplaceState.apply(this, args);
+            setTimeout(trackSuccessPage, 0);
+        };
+        window.addEventListener('popstate', trackSuccessPage);
+
+        return () => {
+            history.pushState = origPushState;
+            history.replaceState = origReplaceState;
+            window.removeEventListener('popstate', trackSuccessPage);
+        };
+    }, []);
 
     // Listen for BradSearch autocomplete events
     useEffect(() => {
