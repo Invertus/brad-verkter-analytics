@@ -11,7 +11,7 @@
  * - Page visit signal tracking for conversion attribution (via cartId prop)
  */
 
-import React, { useEffect, useRef } from 'react';
+import React, { useEffect, useRef, useState } from 'react';
 import { DEFAULT_SCRIPT_URL } from './config/constants';
 
 // Module-level tracker reference shared across the provider
@@ -71,6 +71,7 @@ export const BradSearchAnalyticsProvider = ({
     children
 }) => {
     const trackerRef = useRef(null);
+    const [trackerReady, setTrackerReady] = useState(false);
 
     // Initialize tracker when config is available
     useEffect(() => {
@@ -95,6 +96,7 @@ export const BradSearchAnalyticsProvider = ({
             if (tracker && mounted) {
                 trackerRef.current = tracker;
                 globalTracker = tracker;
+                setTrackerReady(true);
                 console.log('[BradSearch Analytics] Tracker initialized successfully');
             }
         });
@@ -109,7 +111,7 @@ export const BradSearchAnalyticsProvider = ({
     const lastTrackedPageRef = useRef(null);
 
     useEffect(() => {
-        if (!trackerRef.current || !cartId) return;
+        if (!trackerReady || !cartId) return;
         if (typeof window === 'undefined') return;
 
         const detectPageName = (path) => {
@@ -152,7 +154,7 @@ export const BradSearchAnalyticsProvider = ({
             history.replaceState = origReplaceState;
             window.removeEventListener('popstate', trackPageVisit);
         };
-    }, [cartId]);
+    }, [trackerReady, cartId]);
 
     // Listen for BradSearch autocomplete events
     useEffect(() => {
