@@ -220,21 +220,13 @@ const wrapTracker = (tracker) => {
         get(target, prop) {
             if (prop === 'trackSearchProductClick') {
                 return (data) => {
-                    // Fire view-search with the clicked product before the click event
-                    // BRD-840 - instead of intercepting requests we now add 1 request in between click so it can be attributed to click.
-                    // This part will change when we have back-end tracking involved.
                     let query = '';
                     try {
                         const params = new URLSearchParams(window.location.search);
                         query = params.get('query') || '';
                     } catch (e) { /* ignore */ }
 
-                    target.trackViewSearch({
-                        query,
-                        productIds: [data.productId]
-                    });
-
-                    return target.trackSearchProductClick(data);
+                    return target.trackSearchProductClick({ ...data, query });
                 };
             }
             const value = target[prop];
