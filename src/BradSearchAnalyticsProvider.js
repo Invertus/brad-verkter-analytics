@@ -8,10 +8,11 @@
  * Features:
  * - Autocomplete event tracking (custom DOM events)
  * - Search product click tracking (event delegation with data attributes)
- * - Cart enrichment (via cartId prop)
+ * - Page visit signal tracking for conversion attribution (via cartId prop)
  */
 
-import React, { useEffect, useRef } from 'react';
+import React, { useEffect, useRef, useState } from 'react';
+import { createTracker, UmamiProvider } from '@bradsearch/analytics-core';
 import { DEFAULT_SCRIPT_URL } from './config/constants';
 
 // Module-level tracker reference shared across the provider
@@ -19,13 +20,9 @@ let globalTracker = null;
 
 /**
  * Initialize the analytics tracker
- * Uses dynamic import to load @bradsearch/analytics-core only when needed
  */
 const initializeTracker = async (config) => {
     try {
-        // Dynamically import analytics-core only when enabled
-        const { createTracker, UmamiProvider } = await import('@bradsearch/analytics-core');
-
         const tracker = createTracker({
             provider: new UmamiProvider({
                 debug: config.debug,
@@ -59,7 +56,7 @@ const initializeTracker = async (config) => {
  * @param {string} [props.scriptUrl] - Optional. Umami script URL. Defaults to DEFAULT_SCRIPT_URL
  * @param {boolean} [props.enabled=true] - Optional. Enable/disable tracking
  * @param {boolean} [props.debug] - Optional. Enable debug logging. Defaults to NODE_ENV === 'development'
- * @param {string} [props.cartId] - Optional. Cart ID for cart enrichment
+ * @param {string} [props.cartId] - Optional. Cart ID for page visit signal tracking
  * @param {React.ReactNode} props.children - App content
  */
 export const BradSearchAnalyticsProvider = ({
@@ -71,6 +68,7 @@ export const BradSearchAnalyticsProvider = ({
     children
 }) => {
     const trackerRef = useRef(null);
+    const [trackerReady, setTrackerReady] = useState(false);
 
     // Initialize tracker when config is available
     useEffect(() => {
@@ -95,6 +93,7 @@ export const BradSearchAnalyticsProvider = ({
             if (tracker && mounted) {
                 trackerRef.current = tracker;
                 globalTracker = tracker;
+                setTrackerReady(true);
                 console.log('[BradSearch Analytics] Tracker initialized successfully');
             }
         });
@@ -104,18 +103,55 @@ export const BradSearchAnalyticsProvider = ({
         };
     }, [enabled, websiteId, scriptUrl, debug]);
 
-    // Update cart enrichment when cart ID changes
+    // Track page visit signals for conversion attribution
+    // Fires when cartId is available and user is on a significant page (cart, checkout, success)
+    const lastTrackedPageRef = useRef(null);
+
     useEffect(() => {
-        if (trackerRef.current && cartId) {
-            try {
-                trackerRef.current.updateCart({
-                    cartId: cartId
-                });
-            } catch (error) {
-                console.error('[BradSearch Analytics] Error updating cart:', error);
-            }
-        }
-    }, [cartId]);
+        if (!trackerReady || !cartId) return;
+        if (typeof window === 'undefined') return;
+
+        const detectPageName = (path) => {
+            if (path.startsWith('/success')) return 'order-confirmation';
+            if (path.startsWith('/checkout')) return 'checkout';
+            if (path.startsWith('/cart')) return 'cart';
+            return null;
+        };
+
+        const trackPageVisit = () => {
+            const pageName = detectPageName(window.location.pathname);
+            if (!pageName) return;
+
+            // Avoid duplicate signals for the same page + cartId
+            const key = `${pageName}:${cartId}`;
+            if (lastTrackedPageRef.current === key) return;
+            lastTrackedPageRef.current = key;
+
+            trackerRef.current.trackPageVisit({ pageName, cartId });
+        };
+
+        trackPageVisit();
+
+        // Track on SPA route changes
+        const origPushState = history.pushState;
+        const origReplaceState = history.replaceState;
+
+        history.pushState = function(...args) {
+            origPushState.apply(this, args);
+            setTimeout(trackPageVisit, 0);
+        };
+        history.replaceState = function(...args) {
+            origReplaceState.apply(this, args);
+            setTimeout(trackPageVisit, 0);
+        };
+        window.addEventListener('popstate', trackPageVisit);
+
+        return () => {
+            history.pushState = origPushState;
+            history.replaceState = origReplaceState;
+            window.removeEventListener('popstate', trackPageVisit);
+        };
+    }, [trackerReady, cartId]);
 
     // Listen for BradSearch autocomplete events
     useEffect(() => {
