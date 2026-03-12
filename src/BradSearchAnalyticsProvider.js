@@ -227,56 +227,40 @@ export const BradSearchAnalyticsProvider = ({
         };
     }, []);
 
-    // Intercept fetch to track search results on the search page
-    useEffect(() => {
-        if (!trackerReady) return;
-        if (typeof window === 'undefined') return;
-
-        const originalFetch = window.fetch;
-
-        window.fetch = function(...args) {
-            const request = args[0];
-            const url = typeof request === 'string' ? request : request?.url;
-
-            return originalFetch.apply(this, args).then(response => {
-                if (
-                    url &&
-                    url.includes('operationName=ProductSearch') &&
-                    window.location.pathname.includes('/search')
-                ) {
-                    response.clone().json().then(json => {
-                        const products = json?.data?.products;
-                        if (!products?.items?.length) return;
-
-                        const productIds = products.items.map(item => parseInt(item.id));
-
-                        let query = '';
-                        try {
-                            const urlObj = new URL(url, window.location.origin);
-                            const variables = urlObj.searchParams.get('variables');
-                            if (variables) {
-                                query = JSON.parse(variables).inputText || '';
-                            }
-                        } catch (e) { /* ignore parse errors */ }
-
-                        trackerRef.current?.trackViewSearch({
-                            query,
-                            productIds
-                        });
-                    }).catch(() => { /* ignore non-JSON responses */ });
-                }
-
-                return response;
-            });
-        };
-
-        return () => {
-            window.fetch = originalFetch;
-        };
-    }, [trackerReady]);
-
     // Render children without wrapping (no context needed)
     return <>{children}</>;
+};
+
+/**
+ * Create a wrapper around the tracker that fires trackViewSearch
+ * before trackSearchProductClick, so search results get attributed.
+ */
+const wrapTracker = (tracker) => {
+    return new Proxy(tracker, {
+        get(target, prop) {
+            if (prop === 'trackSearchProductClick') {
+                return (data) => {
+                    // Fire view-search with the clicked product before the click event
+                    // BRD-840 - instead of intercepting requests we now add 1 request in between click so it can be attributed to click.
+                    // This part will change when we have back-end tracking involved.
+                    let query = '';
+                    try {
+                        const params = new URLSearchParams(window.location.search);
+                        query = params.get('query') || '';
+                    } catch (e) { /* ignore */ }
+
+                    target.trackViewSearch({
+                        query,
+                        productIds: [data.productId]
+                    });
+
+                    return target.trackSearchProductClick(data);
+                };
+            }
+            const value = target[prop];
+            return typeof value === 'function' ? value.bind(target) : value;
+        }
+    });
 };
 
 /**
@@ -284,5 +268,5 @@ export const BradSearchAnalyticsProvider = ({
  * @returns {object|null} The tracker instance or null if not initialized
  */
 export const useBradSearchTracker = () => {
-    return globalTracker;
+    return globalTracker ? wrapTracker(globalTracker) : null;
 };
