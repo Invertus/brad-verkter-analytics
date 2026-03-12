@@ -1,6 +1,6 @@
 {
   "name": "@bradsearch/brad-verkter-analytics",
-  "version": "1.1.0",
+  "version": "1.1.1-beta.0",
   "description": "BradSearch analytics tracking provider for Verkter client storefronts",
   "main": "dist/index.js",
   "module": "dist/index.js",
