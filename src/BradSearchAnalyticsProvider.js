@@ -227,91 +227,51 @@ export const BradSearchAnalyticsProvider = ({
         };
     }, []);
 
-    // Intercept fetch to track search results — only active on the search page
+    // Intercept fetch to track search results on the search page
     useEffect(() => {
         if (!trackerReady) return;
         if (typeof window === 'undefined') return;
 
-        let interceptorInstalled = false;
-        let originalFetch = null;
+        const originalFetch = window.fetch;
 
-        const installInterceptor = () => {
-            if (interceptorInstalled) return;
-            if (!window.location.pathname.includes('/search')) return;
+        window.fetch = function(...args) {
+            const request = args[0];
+            const url = typeof request === 'string' ? request : request?.url;
 
-            interceptorInstalled = true;
-            originalFetch = window.fetch;
+            return originalFetch.apply(this, args).then(response => {
+                if (
+                    url &&
+                    url.includes('operationName=ProductSearch') &&
+                    window.location.pathname.includes('/search')
+                ) {
+                    response.clone().json().then(json => {
+                        const products = json?.data?.products;
+                        if (!products?.items?.length) return;
 
-            window.fetch = function(...args) {
-                const request = args[0];
-                const url = typeof request === 'string' ? request : request?.url;
+                        const productIds = products.items.map(item => parseInt(item.id));
 
-                return originalFetch.apply(this, args).then(response => {
-                    if (url && url.includes('operationName=ProductSearch')) {
-                        response.clone().json().then(json => {
-                            const products = json?.data?.products;
-                            if (!products?.items?.length) return;
+                        let query = '';
+                        try {
+                            const urlObj = new URL(url, window.location.origin);
+                            const variables = urlObj.searchParams.get('variables');
+                            if (variables) {
+                                query = JSON.parse(variables).inputText || '';
+                            }
+                        } catch (e) { /* ignore parse errors */ }
 
-                            const productIds = products.items.map(item => parseInt(item.id));
+                        trackerRef.current?.trackViewSearch({
+                            query,
+                            productIds
+                        });
+                    }).catch(() => { /* ignore non-JSON responses */ });
+                }
 
-                            let query = '';
-                            try {
-                                const urlObj = new URL(url, window.location.origin);
-                                const variables = urlObj.searchParams.get('variables');
-                                if (variables) {
-                                    query = JSON.parse(variables).inputText || '';
-                                }
-                            } catch (e) { /* ignore parse errors */ }
-
-                            trackerRef.current?.trackViewSearch({
-                                query,
-                                productIds
-                            });
-                        }).catch(() => { /* ignore non-JSON responses */ });
-                    }
-
-                    return response;
-                });
-            };
+                return response;
+            });
         };
-
-        const removeInterceptor = () => {
-            if (!interceptorInstalled) return;
-            window.fetch = originalFetch;
-            originalFetch = null;
-            interceptorInstalled = false;
-        };
-
-        const onRouteChange = () => {
-            if (window.location.pathname.includes('/search')) {
-                installInterceptor();
-            } else {
-                removeInterceptor();
-            }
-        };
-
-        // Check current page
-        installInterceptor();
-
-        // Listen for SPA route changes
-        const origPushState = history.pushState;
-        const origReplaceState = history.replaceState;
-
-        history.pushState = function(...args) {
-            origPushState.apply(this, args);
-            setTimeout(onRouteChange, 0);
-        };
-        history.replaceState = function(...args) {
-            origReplaceState.apply(this, args);
-            setTimeout(onRouteChange, 0);
-        };
-        window.addEventListener('popstate', onRouteChange);
 
         return () => {
-            removeInterceptor();
-            history.pushState = origPushState;
-            history.replaceState = origReplaceState;
-            window.removeEventListener('popstate', onRouteChange);
+            window.fetch = originalFetch;
         };
     }, [trackerReady]);
 
