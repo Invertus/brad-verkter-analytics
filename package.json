@@ -1,6 +1,6 @@
 {
   "name": "@bradsearch/brad-verkter-analytics",
-  "version": "1.1.0",
+  "version": "1.1.1",
   "description": "BradSearch analytics tracking provider for Verkter client storefronts",
   "main": "dist/index.js",
   "module": "dist/index.js",
@@ -12,10 +12,11 @@
     "prepublishOnly": "npm run build"
   },
   "peerDependencies": {
-    "react": ">=16.8.0"
+    "react": ">=16.8.0",
+    "react-router-dom": ">=5"
   },
   "dependencies": {
-    "@bradsearch/analytics-core": "^1.1.2"
+    "@bradsearch/analytics-core": "^1.2"
   },
   "devDependencies": {
     "@babel/cli": "^7.23.0",
