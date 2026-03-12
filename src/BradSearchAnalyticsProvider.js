@@ -11,7 +11,8 @@
  * - Page visit signal tracking for conversion attribution (via cartId prop)
  */
 
-import React, { useEffect, useRef, useState } from 'react';
+import React, { useCallback, useEffect, useRef, useState } from 'react';
+import { useLocation } from 'react-router-dom';
 import { createTracker, UmamiProvider } from '@bradsearch/analytics-core';
 import { DEFAULT_SCRIPT_URL } from './config/constants';
 
@@ -106,52 +107,31 @@ export const BradSearchAnalyticsProvider = ({
     // Track page visit signals for conversion attribution
     // Fires when cartId is available and user is on a significant page (cart, checkout, success)
     const lastTrackedPageRef = useRef(null);
+    const { pathname } = useLocation();
+
+    const detectPageName = (path) => {
+        if (path.startsWith('/success')) return 'order-confirmation';
+        if (path.startsWith('/checkout')) return 'checkout';
+        if (path.startsWith('/cart')) return 'cart';
+        return null;
+    };
+
+    const trackPageVisit = useCallback((path) => {
+        const pageName = detectPageName(path);
+        if (!pageName) return;
+
+        // Avoid duplicate signals for the same page + cartId
+        const key = `${pageName}:${cartId}`;
+        if (lastTrackedPageRef.current === key) return;
+        lastTrackedPageRef.current = key;
+
+        trackerRef.current.trackPageVisit({ pageName, cartId });
+    }, [cartId]);
 
     useEffect(() => {
         if (!trackerReady || !cartId) return;
-        if (typeof window === 'undefined') return;
-
-        const detectPageName = (path) => {
-            if (path.startsWith('/success')) return 'order-confirmation';
-            if (path.startsWith('/checkout')) return 'checkout';
-            if (path.startsWith('/cart')) return 'cart';
-            return null;
-        };
-
-        const trackPageVisit = () => {
-            const pageName = detectPageName(window.location.pathname);
-            if (!pageName) return;
-
-            // Avoid duplicate signals for the same page + cartId
-            const key = `${pageName}:${cartId}`;
-            if (lastTrackedPageRef.current === key) return;
-            lastTrackedPageRef.current = key;
-
-            trackerRef.current.trackPageVisit({ pageName, cartId });
-        };
-
-        trackPageVisit();
-
-        // Track on SPA route changes
-        const origPushState = history.pushState;
-        const origReplaceState = history.replaceState;
-
-        history.pushState = function(...args) {
-            origPushState.apply(this, args);
-            setTimeout(trackPageVisit, 0);
-        };
-        history.replaceState = function(...args) {
-            origReplaceState.apply(this, args);
-            setTimeout(trackPageVisit, 0);
-        };
-        window.addEventListener('popstate', trackPageVisit);
-
-        return () => {
-            history.pushState = origPushState;
-            history.replaceState = origReplaceState;
-            window.removeEventListener('popstate', trackPageVisit);
-        };
-    }, [trackerReady, cartId]);
+        trackPageVisit(pathname);
+    }, [pathname, trackerReady, cartId, trackPageVisit]);
 
     // Listen for BradSearch autocomplete events
     useEffect(() => {

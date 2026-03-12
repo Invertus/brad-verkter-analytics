@@ -12,7 +12,8 @@
     "prepublishOnly": "npm run build"
   },
   "peerDependencies": {
-    "react": ">=16.8.0"
+    "react": ">=16.8.0",
+    "react-router-dom": ">=5"
   },
   "dependencies": {
     "@bradsearch/analytics-core": "^1.1.2"
