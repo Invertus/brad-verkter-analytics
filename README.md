@@ -104,54 +104,10 @@ bradsearch_analytics_website_id: ''
 // 5.1 packages/peregrine/lib/hooks/useDataLayer.js 
 
 import { useBradSearchTracker } from '@magento/peregrine/lib/context/bradSearchAnalytics';
-import { useCartContext } from '@magento/peregrine/lib/context/cart';
-
-const [
-    {
-        cartId
-    },
-] = useCartContext();
 
 // Get BradSearch tracker instance once at hook level
 const bradSearchTracker = useBradSearchTracker();
 
-removeFromCartEvent: data => {
-    // Existing GTM tracking
-    pushTag('remove_from_cart', removeFromCart(data));
-
-    // BradSearch tracking
-    if (bradSearchTracker && Array.isArray(data)) {
-        data.forEach(item => {
-            if (item?.product?.id) {
-                try {
-                    bradSearchTracker.trackRemoveFromCart({
-                        cartId: cartId,
-                        productId: parseInt(item.product.id)
-                    });
-                } catch (error) {
-                    console.error('[BradSearch Analytics] Error tracking remove-from-cart:', error);
-                }
-            }
-        });
-    }
-}
-
-addToCartEvent: data => {
-    // Existing GTM tracking
-    pushTag('add_to_cart', addToCartTag(data));
-
-    // BradSearch tracking
-    if (bradSearchTracker && data.id) {
-        try {
-            bradSearchTracker.trackAddToCart({
-                cartId: cartId,
-                productId: parseInt(data.id)
-            });
-        } catch (error) {
-            console.error('[BradSearch Analytics] Error tracking add-to-cart:', error);
-        }
-    }
-}
  // add new field to existing object
 searchProductClickEvent: productId => {
     if (bradSearchTracker && productId) {
