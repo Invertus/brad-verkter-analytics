@@ -19,6 +19,30 @@ import { DEFAULT_SCRIPT_URL } from './config/constants';
 // Module-level tracker reference shared across the provider
 let globalTracker = null;
 
+const AI_MATCH_VALUES = ['exact', 'close', 'none'];
+
+/**
+ * Add ai_used / ai_match when the AI search path ran for the query (detail.aiSearch is set)
+ */
+const addAiSearchData = (trackingData, detail) => {
+    const aiSearch = detail.aiSearch;
+    if (aiSearch && aiSearch.used === true && AI_MATCH_VALUES.includes(aiSearch.match)) {
+        trackingData.ai_used = true;
+        trackingData.ai_match = aiSearch.match;
+    }
+    return trackingData;
+};
+
+/**
+ * Add ai_match when the clicked product was served by AI search (detail.aiMatch is set)
+ */
+const addAiClickData = (trackingData, detail) => {
+    if (detail.aiMatch === 'exact' || detail.aiMatch === 'close') {
+        trackingData.ai_match = detail.aiMatch;
+    }
+    return trackingData;
+};
+
 /**
  * Initialize the analytics tracker
  */
@@ -145,9 +169,9 @@ export const BradSearchAnalyticsProvider = ({
                 return;
             }
 
-            trackerRef.current.trackAutocompleteProductClick({
+            trackerRef.current.trackAutocompleteProductClick(addAiClickData({
                 productId: parseInt(detail.product.id),
-            });
+            }, detail));
         };
 
         const _handleAutocompleteResponse = (detail) => {
@@ -157,10 +181,10 @@ export const BradSearchAnalyticsProvider = ({
                 return parseInt(id);
             });
 
-            trackerRef.current.trackAutocompleteResponse({
+            trackerRef.current.trackAutocompleteResponse(addAiSearchData({
                 query: query,
                 product_ids: productIds
-            });
+            }, detail));
         };
 
         /**
