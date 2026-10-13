@@ -20,6 +20,17 @@ import { DEFAULT_SCRIPT_URL } from './config/constants';
 let globalTracker = null;
 
 const AI_MATCH_VALUES = ['exact', 'close', 'none'];
+const CORRELATION_ID_KEY = 'X-Request-Correlation-ID';
+
+/**
+ * Copy the widget's request correlation id so analytics can join the event to the search request
+ */
+const addCorrelationId = (trackingData, detail) => {
+    if (detail && detail[CORRELATION_ID_KEY]) {
+        trackingData[CORRELATION_ID_KEY] = detail[CORRELATION_ID_KEY];
+    }
+    return trackingData;
+};
 
 /**
  * Add ai_used / ai_match when the AI search path ran for the query (detail.aiSearch is set)
@@ -169,9 +180,9 @@ export const BradSearchAnalyticsProvider = ({
                 return;
             }
 
-            trackerRef.current.trackAutocompleteProductClick(addAiClickData({
+            trackerRef.current.trackAutocompleteProductClick(addCorrelationId(addAiClickData({
                 productId: parseInt(detail.product.id),
-            }, detail));
+            }, detail), detail));
         };
 
         const _handleAutocompleteResponse = (detail) => {
@@ -181,10 +192,10 @@ export const BradSearchAnalyticsProvider = ({
                 return parseInt(id);
             });
 
-            trackerRef.current.trackAutocompleteResponse(addAiSearchData({
+            trackerRef.current.trackAutocompleteResponse(addCorrelationId(addAiSearchData({
                 query: query,
                 product_ids: productIds
-            }, detail));
+            }, detail), detail));
         };
 
         /**
