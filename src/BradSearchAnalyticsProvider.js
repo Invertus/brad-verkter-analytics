@@ -23,11 +23,12 @@ const AI_MATCH_VALUES = ['exact', 'close', 'none'];
 const CORRELATION_ID_KEY = 'X-Request-Correlation-ID';
 
 /**
- * Copy the widget's request correlation id so analytics can join the event to the search request
+ * Pass the widget's request correlation id so analytics can join the event to the search request.
+ * analytics-core sends `correlation.correlationId` as the X-Request-Correlation-ID header.
  */
 const addCorrelationId = (trackingData, detail) => {
     if (detail && detail[CORRELATION_ID_KEY]) {
-        trackingData[CORRELATION_ID_KEY] = detail[CORRELATION_ID_KEY];
+        trackingData.correlation = { correlationId: detail[CORRELATION_ID_KEY] };
     }
     return trackingData;
 };
