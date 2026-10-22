@@ -166,6 +166,43 @@ const handlePress = async (...props) => {
 
 ```
 
+## Search results page (view-search, AI search fields)
+
+Needs `bradsearch/magento-extension` with the `bradsearch_search` field on the GraphQL `products` type.
+
+1. Add the BradSearch block to the `ProductSearch` query (`packages/peregrine/lib/talons/SearchPage/searchPage.gql.js`), inside `products { ... }`:
+
+```graphql
+bradsearch_search {
+    correlation_id
+    ai_search {
+        used
+        match
+    }
+    ai_matches {
+        product_id
+        ai_match
+    }
+}
+```
+
+Keep `id` in `items` - the events use it as the product id.
+
+2. Call the hook in `packages/venia-ui/lib/components/SearchPage/searchPage.js`, after `useSearchPage()`:
+
+```jsx
+import { useBradSearchResultsPage } from '@bradsearch/brad-verkter-analytics';
+
+// BradSearch analytics: view-search for each result set shown (query, products, AI search state)
+useBradSearchResultsPage({
+    query: searchTerm,
+    products: data && data.products,
+    loading
+});
+```
+
+Product clicks already sent through `useBradSearchTracker().trackSearchProductClick()` (step 5.1 above) need no change.
+
 ## Tracked Events
 
 The provider automatically tracks:
@@ -173,6 +210,11 @@ The provider automatically tracks:
 1. **Autocomplete Product Clicks** - When users click products in autocomplete
 2. **Autocomplete Responses** - When autocomplete returns results (for impressions)
 3. **Cart Enrichment** - Associates tracking with cart ID when provided
+
+With the search results page wired up (see below):
+
+4. **Search results page views** (`view-search`) - sent by `useBradSearchResultsPage` once per result set shown (new query, page, sort or filter): query, product ids, `ai_used` / `ai_match` and the search's `X-Request-Correlation-ID`
+5. **Search results product clicks** (`search-product-click`) - sent through `useBradSearchTracker().trackSearchProductClick()`; on a results page tracked by `useBradSearchResultsPage` the click also carries the product's `ai_match` and the search's correlation id
 
 ## How It Works
 
@@ -186,4 +228,5 @@ These events are dispatched by the `@bradsearch/brad-verkter-autocomplete` compo
 
 - `BradSearchAnalyticsProvider` - Main React provider component
 - `useBradSearchTracker` - Hook to access tracker instance (advanced usage)
+- `useBradSearchResultsPage` - Hook that tracks the search results page (view-search)
 - `DEFAULT_SCRIPT_URL` - Default analytics script URL
