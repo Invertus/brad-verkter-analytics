@@ -12,6 +12,7 @@ The provider wraps the application and sets up DOM event listeners for tracking:
 - Autocomplete product clicks (`bradsearch-autocomplete-product-click` events)
 - Autocomplete responses (`bradsearch-autocomplete-success` events)
 - Cart enrichment via optional `cartId` prop
+- Search results page: `useBradSearchResultsPage` sends `view-search`; `useBradSearchTracker` adds the shown search's `ai_match` / correlation id to `search-product-click`
 
 **Key files:**
 - `src/BradSearchAnalyticsProvider.js` - Main React provider component with event listeners
