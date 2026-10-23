@@ -7,7 +7,8 @@
  *
  * Features:
  * - Autocomplete event tracking (custom DOM events)
- * - Search product click tracking (event delegation with data attributes)
+ * - Search results page tracking: view-search via useBradSearchResultsPage, and
+ *   search-product-click enrichment for clicks sent through useBradSearchTracker
  * - Page visit signal tracking for conversion attribution (via cartId prop)
  */
 
@@ -18,6 +19,18 @@ import { DEFAULT_SCRIPT_URL } from './config/constants';
 
 // Module-level tracker reference shared across the provider
 let globalTracker = null;
+
+// Hooks waiting for the tracker (it initializes asynchronously after the first render)
+const trackerListeners = new Set();
+
+// The search results page on screen, set by useBradSearchResultsPage: its query and the
+// bradsearch_search object of the Magento GraphQL products response
+let currentResultsPage = null;
+
+const setGlobalTracker = (tracker) => {
+    globalTracker = tracker;
+    trackerListeners.forEach(listener => listener(tracker));
+};
 
 const AI_MATCH_VALUES = ['exact', 'close', 'none'];
 const CORRELATION_ID_KEY = 'X-Request-Correlation-ID';
@@ -53,6 +66,27 @@ const addAiClickData = (trackingData, detail) => {
         trackingData.ai_match = detail.aiMatch;
     }
     return trackingData;
+};
+
+/**
+ * Shape a results page's bradsearch_search like the autocomplete event detail, so the
+ * same helpers apply the same rules to the results page
+ */
+const resultsPageDetail = (bradsearchSearch, productId) => {
+    const detail = {};
+    if (!bradsearchSearch) {
+        return detail;
+    }
+
+    detail.aiSearch = bradsearchSearch.ai_search;
+    detail[CORRELATION_ID_KEY] = bradsearchSearch.correlation_id;
+
+    if (productId !== undefined && Array.isArray(bradsearchSearch.ai_matches)) {
+        const match = bradsearchSearch.ai_matches.find(item => item && Number(item.product_id) === Number(productId));
+        detail.aiMatch = match ? match.ai_match : undefined;
+    }
+
+    return detail;
 };
 
 /**
@@ -129,7 +163,7 @@ export const BradSearchAnalyticsProvider = ({
         initializeTracker(config).then(tracker => {
             if (tracker && mounted) {
                 trackerRef.current = tracker;
-                globalTracker = tracker;
+                setGlobalTracker(tracker);
                 setTrackerReady(true);
                 console.log('[BradSearch Analytics] Tracker initialized successfully');
             }
@@ -248,8 +282,9 @@ export const BradSearchAnalyticsProvider = ({
 };
 
 /**
- * Create a wrapper around the tracker that fires trackViewSearch
- * before trackSearchProductClick, so search results get attributed.
+ * Wrap the tracker so trackSearchProductClick gets the search query from the URL (?query=)
+ * and, on a results page tracked by useBradSearchResultsPage, the clicked product's ai_match
+ * and the search's correlation id.
  */
 const wrapTracker = (tracker) => {
     return new Proxy(tracker, {
@@ -262,7 +297,14 @@ const wrapTracker = (tracker) => {
                         query = params.get('query') || '';
                     } catch (e) { /* ignore */ }
 
-                    return target.trackSearchProductClick({ ...data, query });
+                    const page = currentResultsPage;
+                    const payload = { ...data, query: query || (page ? page.query : '') };
+                    if (page) {
+                        const detail = resultsPageDetail(page.bradsearchSearch, data && data.productId);
+                        addCorrelationId(addAiClickData(payload, detail), detail);
+                    }
+
+                    return target.trackSearchProductClick(payload);
                 };
             }
             const value = target[prop];
@@ -277,4 +319,61 @@ const wrapTracker = (tracker) => {
  */
 export const useBradSearchTracker = () => {
     return globalTracker ? wrapTracker(globalTracker) : null;
+};
+
+/**
+ * Track the search results page: sends view-search once for each result set shown
+ * (new query, page, sort or filter), with the product ids, ai_used / ai_match and the
+ * search's correlation id; product clicks sent through useBradSearchTracker then carry
+ * the clicked product's ai_match and the same correlation id.
+ *
+ * @param {Object} params
+ * @param {string} params.query - The search term on screen
+ * @param {Object} [params.products] - The `products` object of the ProductSearch GraphQL
+ *   response: `items` (with `id`) and `bradsearch_search`
+ * @param {boolean} [params.loading] - true while the next result set is loading
+ */
+export const useBradSearchResultsPage = ({ query, products, loading = false }) => {
+    const [tracker, setTracker] = useState(globalTracker);
+
+    useEffect(() => {
+        setTracker(globalTracker);
+        trackerListeners.add(setTracker);
+        return () => {
+            trackerListeners.delete(setTracker);
+        };
+    }, []);
+
+    const shown = !loading && products && Array.isArray(products.items) ? products : null;
+    const bradsearchSearch = shown ? shown.bradsearch_search || null : null;
+    const productIds = shown
+        ? shown.items.map(item => parseInt(item && item.id)).filter(id => !isNaN(id))
+        : [];
+    const resultKey = shown
+        ? [query, bradsearchSearch ? bradsearchSearch.correlation_id : '', productIds.join(',')].join('|')
+        : null;
+
+    // Make the shown results available to search-product-click (see wrapTracker)
+    useEffect(() => {
+        if (!shown) return;
+        const page = { query, bradsearchSearch };
+        currentResultsPage = page;
+        return () => {
+            if (currentResultsPage === page) {
+                currentResultsPage = null;
+            }
+        };
+    }, [resultKey]);
+
+    const lastSentKeyRef = useRef(null);
+    useEffect(() => {
+        if (!tracker || !resultKey || lastSentKeyRef.current === resultKey) return;
+        lastSentKeyRef.current = resultKey;
+
+        const detail = resultsPageDetail(bradsearchSearch);
+        tracker.trackViewSearch(addCorrelationId(addAiSearchData({
+            query: query,
+            product_ids: productIds
+        }, detail), detail));
+    }, [tracker, resultKey]);
 };
