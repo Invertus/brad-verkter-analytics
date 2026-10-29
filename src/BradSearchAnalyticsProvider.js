@@ -10,12 +10,15 @@
  * - Search results page tracking: view-search via useBradSearchResultsPage, and
  *   search-product-click enrichment for clicks sent through useBradSearchTracker
  * - Page visit signal tracking for conversion attribution (via cartId prop)
+ * - Assistant events: bradsearch-context (search, product view, cart, order) and assistant card
+ *   clicks, with the A/B tag (see assistantEvents.js)
  */
 
 import React, { useCallback, useEffect, useRef, useState } from 'react';
 import { useLocation } from 'react-router-dom';
 import { createTracker, UmamiProvider } from '@bradsearch/analytics-core';
 import { DEFAULT_SCRIPT_URL } from './config/constants';
+import { registerAssistantEvents } from './assistantEvents';
 
 // Module-level tracker reference shared across the provider
 let globalTracker = null;
@@ -202,6 +205,15 @@ export const BradSearchAnalyticsProvider = ({
         if (!trackerReady || !cartId) return;
         trackPageVisit(pathname);
     }, [pathname, trackerReady, cartId, trackPageVisit]);
+
+    // Forward the assistant's events (the Umami script is loaded once the tracker is ready)
+    const cartIdRef = useRef(cartId);
+    cartIdRef.current = cartId;
+
+    useEffect(() => {
+        if (!trackerReady) return;
+        return registerAssistantEvents(() => cartIdRef.current);
+    }, [trackerReady]);
 
     // Listen for BradSearch autocomplete events
     useEffect(() => {
