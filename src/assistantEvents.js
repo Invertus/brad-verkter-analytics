@@ -95,6 +95,31 @@ export const normalizeItems = (items) => {
     return result;
 };
 
+const ASSISTANT_SESSION_KEY = 'bradsearch-assistant-session';
+const ASSISTANT_SESSION_MAX_AGE_MS = 30 * 60 * 1000;
+
+/**
+ * The assistant widget's session id (BRD-1590), so the orders the assistant helped can be told: the shared copy
+ * in localStorage ({id, at}, 30 minutes since last use) or the tab's. Null when the widget never ran here.
+ */
+export const getAssistantSessionId = () => {
+    if (!hasWindow()) return null;
+
+    try {
+        const stored = JSON.parse(window.localStorage.getItem(ASSISTANT_SESSION_KEY));
+        if (stored && typeof stored.id === 'string' && typeof stored.at === 'number'
+            && Date.now() - stored.at < ASSISTANT_SESSION_MAX_AGE_MS) {
+            return stored.id;
+        }
+    } catch (e) { /* storage blocked or not JSON */ }
+
+    try {
+        return window.sessionStorage.getItem(ASSISTANT_SESSION_KEY) || null;
+    } catch (e) {
+        return null;
+    }
+};
+
 /**
  * Forward one `bradsearch-context` detail to analytics
  */
@@ -115,12 +140,15 @@ const handleContext = (detail, getCartId) => {
         if (cartId) data.cart_id = cartId;
         trackWithTag('cart', data);
     } else if (detail.t === 'order' && detail.order_ref_hash && Array.isArray(detail.items)) {
-        trackWithTag('order', {
+        const order = {
             order_ref_hash: detail.order_ref_hash,
             items: normalizeItems(detail.items),
             total: detail.total,
             currency: detail.currency
-        });
+        };
+        const sessionId = getAssistantSessionId();
+        if (sessionId) order.assistant_session_id = sessionId;
+        trackWithTag('order', order);
     }
 };
 

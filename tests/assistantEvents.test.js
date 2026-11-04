@@ -74,6 +74,33 @@ describe('forwarding bradsearch-context', () => {
         });
     });
 
+    describe('the assistant session id on an order (BRD-1590)', () => {
+        const order = { t: 'order', order_ref_hash: 'abc', items: [{ product_id: 1, qty: 1 }], total: 19.9, currency: 'EUR' };
+        const sent = () => track.mock.calls[0][1];
+
+        it('carries the shared session id of the widget', () => {
+            window.localStorage.setItem('bradsearch-assistant-session', JSON.stringify({ id: 'sid-1', at: Date.now() }));
+            context(order);
+            expect(sent().assistant_session_id).toBe('sid-1');
+        });
+
+        it('falls back to the tab session id', () => {
+            window.sessionStorage.setItem('bradsearch-assistant-session', 'sid-tab');
+            context(order);
+            expect(sent().assistant_session_id).toBe('sid-tab');
+        });
+
+        it('leaves it out when the widget never ran or the shared id is stale', () => {
+            context(order);
+            expect(sent()).not.toHaveProperty('assistant_session_id');
+
+            track.mockClear();
+            window.localStorage.setItem('bradsearch-assistant-session', JSON.stringify({ id: 'old', at: Date.now() - 31 * 60 * 1000 }));
+            context(order);
+            expect(sent()).not.toHaveProperty('assistant_session_id');
+        });
+    });
+
     it('handles an array of details', () => {
         context([{ t: 'search', query: 'a', total: 1 }, { t: 'search', query: 'b', total: 2 }]);
         expect(track).toHaveBeenCalledTimes(2);
