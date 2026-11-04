@@ -203,6 +203,53 @@ useBradSearchResultsPage({
 
 Product clicks already sent through `useBradSearchTracker().trackSearchProductClick()` (step 5.1 above) need no change.
 
+## Assistant events
+
+For the BradSearch AI shopping assistant. The provider forwards the widget's page events to analytics (nothing to configure), and the package exports a hook and helpers for the PWA to feed it. Every event carries the A/B tag (`window.bradsearchAbTag`, or the tag the widget stored in `localStorage['bradsearch:abtag']`) as `tag`. Events go through `window.umami.track` (analytics-core 1.2.0 cannot add a tag), so the Umami script must be loaded; the provider does that.
+
+| Source | Analytics event | Data |
+|---|---|---|
+| `bradsearch-context` `{t:'search'}` | `search-committed` | `query`, `total`, `c: 1` |
+| `bradsearch-context` `{t:'product_view'}` | `product-view` | `product_id`, `src`, `qid` |
+| `bradsearch-context` `{t:'cart'}` | `cart` | `items: [{product_id, variant_id?, qty}]`, `cart_id` |
+| `bradsearch-context` `{t:'order'}` | `order` | `order_ref_hash`, `items`, `total`, `currency` |
+| `bradsearch-assistant-card-click` (from the widget) | `assistant-card-click` | `product_id`, `action: 'click'`, `qid` (the conversation id) |
+
+`product_id` must be numeric; events without one are dropped. The `bradsearch-context` events also feed the widget's session context, so dispatch them through the helpers below rather than tracking directly.
+
+### Cart snapshot
+
+In a component under Venia's cart context (for example next to the `BradSearchAnalyticsProvider`):
+
+```jsx
+import { useBradSearchCartSnapshot } from '@bradsearch/brad-verkter-analytics';
+
+const [{ cartId, details }] = useCartContext();
+useBradSearchCartSnapshot({ items: details && details.items, cartId });
+```
+
+`items` is Venia's `cart.details.items` (`product.id`, `configured_variant.id`, `quantity`; add `configured_variant { id }` to the mini cart fragment to get variant ids). The hook debounces 300 ms, skips a cart identical to the last one sent, sends an emptied cart as a snapshot, and sends nothing for a cart that was empty from the start or is still loading (`items` undefined).
+
+### Helpers
+
+```jsx
+import { dispatchSearchCommitted, dispatchProductView, dispatchOrder } from '@bradsearch/brad-verkter-analytics';
+
+// SearchPage, once when a NEW query's results show (not for page, sort or filter changes)
+dispatchSearchCommitted(searchTerm, data.products.total_count);
+
+// Product page, once the product has loaded. Reads and clears sessionStorage['bradsearch:last_src']
+// (src and qid of the search click or assistant card that led here) when it matches the product
+// and is under 10 minutes old.
+dispatchProductView(product.id);
+
+// Success page. order_ref_hash is the sha256 of `identifier`; the same order is sent once per
+// 7 days (localStorage). Items: [{product_id, variant_id?, qty}] or Venia items (product.id, quantity).
+dispatchOrder({ identifier, items, total, currency });
+```
+
+Run the tests with `npm test`.
+
 ## Tracked Events
 
 The provider automatically tracks:
