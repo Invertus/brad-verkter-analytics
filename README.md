@@ -203,6 +203,72 @@ useBradSearchResultsPage({
 
 Product clicks already sent through `useBradSearchTracker().trackSearchProductClick()` (step 5.1 above) need no change.
 
+## Add-to-cart and remove-from-cart
+
+Search revenue reports link a search to an order through the add-to-cart: same shopper, same cart id. Without these two events the dashboard has no "added to cart" step for the store.
+
+Send them through `useBradSearchTracker()`. The tracker adds the provider's `cartId` (the Magento masked quote id from the cart context) by itself, so the call only needs the product and the quantity. Use the parent product id, the same id the search results show.
+
+### 1. `packages/peregrine/lib/hooks/useDataLayer.js`
+
+Today `addToCartEvent` and `removeFromCartEvent` only send to Google (`gtag`). Add the BradSearch call next to it:
+
+```js
+removeFromCartEvent: data => {
+    pushTag('remove_from_cart', removeFromCart(data));
+    if (bradSearchTracker) {
+        try {
+            data.forEach(item => bradSearchTracker.trackRemoveFromCart({
+                productId: parseInt(item.product.id),
+                quantity: item.quantity
+            }));
+        } catch (error) {
+            console.error('[BradSearch Analytics] Error tracking remove from cart:', error);
+        }
+    }
+},
+addToCartEvent: data => {
+    pushTag('add_to_cart', addToCartTag(data));
+    if (bradSearchTracker && data && data.id) {
+        try {
+            bradSearchTracker.trackAddToCart({
+                productId: parseInt(data.id),
+                quantity: data.quantity || 1
+            });
+        } catch (error) {
+            console.error('[BradSearch Analytics] Error tracking add to cart:', error);
+        }
+    }
+},
+```
+
+`addToCartEvent` is called from the category / search grid button (`talons/Gallery/useAddToCartButton.js`) with the gallery item, and `removeFromCartEvent` from the mini cart (`talons/MiniCart/useItem.js`) and the cart page (`components/CartPage/ProductListing/product.js`) with cart items.
+
+### 2. Product page add-to-cart
+
+The product page (`talons/ProductFullDetail/useProductFullDetail.js`, `handleAddToCart`) calls no tracking at all today, not even `gtag`. Call `addToCartEvent` there after the cart mutation succeeds, with the product and the quantity:
+
+```js
+const { addToCartEvent } = useDataLayer();
+// in handleAddToCart, after the addProductToCart mutation resolved:
+addToCartEvent({ ...product, quantity });
+```
+
+If other places add to the cart (add-to-cart dialog, compare list, related products), call `addToCartEvent` there too.
+
+### 3. Update the package
+
+Use `@bradsearch/brad-verkter-analytics` 1.4.0 or newer. Older versions send these events without a cart id, and the server drops them.
+
+### Check it
+
+Open the storefront with DevTools, Network tab, filter `api/send`:
+
+* Add a product from a search results grid: one `add-to-cart` with `product_id`, `quantity` and `cart_id`.
+* Add a product from the product page: the same.
+* Remove it in the mini cart: one `remove-from-cart` with the same `cart_id`.
+* `cart_id` equals the cart's masked id (the `cartId` in the PWA cart context, `quote_id_mask.masked_id` in Magento).
+
 ## Tracked Events
 
 The provider automatically tracks:
@@ -215,6 +281,7 @@ With the search results page wired up (see below):
 
 4. **Search results page views** (`view-search`) - sent by `useBradSearchResultsPage` once per result set shown (new query, page, sort or filter): query, product ids, `ai_used` / `ai_match` and the search's `X-Request-Correlation-ID`
 5. **Search results product clicks** (`search-product-click`) - sent through `useBradSearchTracker().trackSearchProductClick()`; on a results page tracked by `useBradSearchResultsPage` the click also carries the product's `ai_match` and the search's correlation id
+6. **Add-to-cart and remove-from-cart** (`add-to-cart`, `remove-from-cart`) - sent through `useBradSearchTracker().trackAddToCart()` / `trackRemoveFromCart()` from the store's cart code (see above); the tracker adds the provider's `cartId`
 
 ## How It Works
 
