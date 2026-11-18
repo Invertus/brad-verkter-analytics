@@ -27,6 +27,10 @@ const trackerListeners = new Set();
 // bradsearch_search object of the Magento GraphQL products response
 let currentResultsPage = null;
 
+// The cart id passed to the provider (Magento masked quote id), added to cart events sent
+// through useBradSearchTracker. brad-analytics drops cart events without a cart_id.
+let currentCartId = null;
+
 const setGlobalTracker = (tracker) => {
     globalTracker = tracker;
     trackerListeners.forEach(listener => listener(tracker));
@@ -174,6 +178,11 @@ export const BradSearchAnalyticsProvider = ({
         };
     }, [enabled, websiteId, scriptUrl, debug]);
 
+    // Keep the cart id for add-to-cart / remove-from-cart sent through useBradSearchTracker
+    useEffect(() => {
+        currentCartId = cartId || null;
+    }, [cartId]);
+
     // Track page visit signals for conversion attribution
     // Fires when cartId is available and user is on a significant page (cart, checkout, success)
     const lastTrackedPageRef = useRef(null);
@@ -284,7 +293,8 @@ export const BradSearchAnalyticsProvider = ({
 /**
  * Wrap the tracker so trackSearchProductClick gets the search query from the URL (?query=)
  * and, on a results page tracked by useBradSearchResultsPage, the clicked product's ai_match
- * and the search's correlation id.
+ * and the search's correlation id. trackAddToCart / trackRemoveFromCart get the provider's
+ * cart id when the caller passes none.
  */
 const wrapTracker = (tracker) => {
     return new Proxy(tracker, {
@@ -305,6 +315,16 @@ const wrapTracker = (tracker) => {
                     }
 
                     return target.trackSearchProductClick(payload);
+                };
+            }
+            if (prop === 'trackAddToCart' || prop === 'trackRemoveFromCart') {
+                // Add the provider's cart id, so the event links to the cart's order
+                return (data) => {
+                    const payload = { ...data };
+                    if (!payload.cartId && currentCartId) {
+                        payload.cartId = currentCartId;
+                    }
+                    return target[prop](payload);
                 };
             }
             const value = target[prop];
