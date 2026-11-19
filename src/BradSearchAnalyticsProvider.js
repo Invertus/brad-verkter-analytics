@@ -32,6 +32,8 @@ const setGlobalTracker = (tracker) => {
     trackerListeners.forEach(listener => listener(tracker));
 };
 
+const getUrlQuery = (search) => new URLSearchParams(search).get('query') || '';
+
 const AI_MATCH_VALUES = ['exact', 'close', 'none'];
 const CORRELATION_ID_KEY = 'X-Request-Correlation-ID';
 
@@ -293,8 +295,7 @@ const wrapTracker = (tracker) => {
                 return (data) => {
                     let query = '';
                     try {
-                        const params = new URLSearchParams(window.location.search);
-                        query = params.get('query') || '';
+                        query = getUrlQuery(window.location.search);
                     } catch (e) { /* ignore */ }
 
                     const page = currentResultsPage;
@@ -326,6 +327,7 @@ export const useBradSearchTracker = () => {
  * (new query, page, sort or filter), with the product ids, ai_used / ai_match and the
  * search's correlation id; product clicks sent through useBradSearchTracker then carry
  * the clicked product's ai_match and the same correlation id.
+ * Skips tracking when the URL has no ?query= (404 pages).
  *
  * @param {Object} params
  * @param {string} params.query - The search term on screen
@@ -344,7 +346,10 @@ export const useBradSearchResultsPage = ({ query, products, loading = false }) =
         };
     }, []);
 
-    const shown = !loading && products && Array.isArray(products.items) ? products : null;
+    const { search } = useLocation();
+    const hasQueryParam = getUrlQuery(search).trim() !== '';
+
+    const shown = hasQueryParam && !loading && products && Array.isArray(products.items) ? products : null;
     const bradsearchSearch = shown ? shown.bradsearch_search || null : null;
     const productIds = shown
         ? shown.items.map(item => parseInt(item && item.id)).filter(id => !isNaN(id))
@@ -367,6 +372,10 @@ export const useBradSearchResultsPage = ({ query, products, loading = false }) =
 
     const lastSentKeyRef = useRef(null);
     useEffect(() => {
+        if (!hasQueryParam) {
+            lastSentKeyRef.current = null;
+            return;
+        }
         if (!tracker || !resultKey || lastSentKeyRef.current === resultKey) return;
         lastSentKeyRef.current = resultKey;
 
@@ -375,5 +384,5 @@ export const useBradSearchResultsPage = ({ query, products, loading = false }) =
             query: query,
             product_ids: productIds
         }, detail), detail));
-    }, [tracker, resultKey]);
+    }, [tracker, resultKey, hasQueryParam]);
 };
